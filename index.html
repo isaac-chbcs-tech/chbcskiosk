@@ -9,6 +9,7 @@
 <script src="config.js"></script>
 <script>
 let students=[],sessions=[],mode,centre,student,picked=[],stars={},token=null;
+const who=s=>s.last_initial?`${s.first_name} ${s.last_initial}.`:s.first_name;
 const app=document.getElementById('app');
 const show=h=>{app.innerHTML=h;scrollTo(0,0)};
 const again=`<p><button class="link" onclick="home()">← Start again</button></p>`;
@@ -59,11 +60,29 @@ function start(m){
   pickCentre();
 }
 function pickCentre(){
-  show(`<h1>Which grade are you in?</h1><div class="grid">${CENTRES.map(c=>`<button class="tile" onclick="pickName('${c}')">${c}</button>`).join('')}</div>${again}`);
+  show(`<h1>Who are you?</h1><div class="grid">${CENTRES.map(c=>`<button class="tile" onclick="pickName('${c}')">Grade ${c}</button>`).join('')}
+  <button class="tile" onclick="pickName('Staff')">👩‍🏫 Teachers and staff</button>
+  <button class="tile" onclick="guestForm()">🙋 Visitor</button></div>${again}`);
+}
+function pickBack(){centre=='Guest'?pickCentre():pickName(centre);}
+function guestForm(note=''){
+  show(`<h1>Type your name</h1>
+  <p><input type="text" id="gn" maxlength="30" autocomplete="off" aria-label="Your name" onkeydown="if(event.key==='Enter')addGuest()" style="font-size:1.4rem;width:100%;max-width:420px"></p>
+  ${note?`<p>${esc(note)}</p>`:''}<button class="tile go" onclick="addGuest()">Continue</button>
+  <p><button class="link" onclick="pickCentre()">← Back</button></p>`);
+}
+async function addGuest(){
+  const name=document.getElementById('gn').value.trim();
+  if(name.length<2)return guestForm('Please type your name.');
+  const {data,error}=await db.rpc('add_guest',{t:token,p_name:name});
+  if(error&&error.code=='28000')return expire();
+  if(error||!data)return guestForm('Your name could not be saved. Tell a teacher.');
+  student={id:data,first_name:name,last_initial:'',centre:'Guest'};centre='Guest';picked=[];stars={};
+  mode=='order'?dishes():rate();
 }
 function pickName(c){
   centre=c;const l=students.filter(s=>s.centre==c);
-  show(`<h1>Tap your name</h1>${l.length?`<div class="grid">${l.map(s=>`<button class="tile" onclick="chooseStudent('${s.id}')">${esc(nm(s))}</button>`).join('')}</div>`:'<p>No names are here yet. Tell a teacher.</p>'}<p><button class="link" onclick="pickCentre()">← Back</button></p>`);
+  show(`<h1>Tap your name</h1>${l.length?`<div class="grid">${l.map(s=>`<button class="tile" onclick="chooseStudent('${s.id}')">${esc(who(s))}</button>`).join('')}</div>`:'<p>No names are here yet. Tell a teacher.</p>'}<p><button class="link" onclick="pickCentre()">← Back</button> &nbsp; <button class="link" onclick="guestForm()">My name is not here</button></p>`);
 }
 function chooseStudent(id){student=students.find(s=>s.id==id);picked=[];stars={};mode=='order'?dishes():rate();}
 
@@ -72,7 +91,7 @@ function dishes(){
   <div class="grid">${items(cur()).map((m,i)=>`<button class="tile dish d${i%4} ${picked.includes(m.id)?'on':''}" onclick="toggle('${m.id}')">${pic(m.image_url,'100%')}${esc(m.name)}</button>`).join('')}</div>
   <p class="sub">${picked.length} of 2 picked</p>
   <button class="tile go" ${picked.length?'':'disabled'} onclick="send()">Send my order</button>
-  <p><button class="link" onclick="pickName('${centre}')">← That is not me</button></p>`);
+  <p><button class="link" onclick="pickBack()">← That is not me</button></p>`);
 }
 function toggle(id){const i=picked.indexOf(id);if(i>-1)picked.splice(i,1);else if(picked.length<2)picked.push(id);dishes();}
 async function send(){
@@ -86,7 +105,7 @@ function rate(){
   show(`<h1>How was the food, ${esc(student.first_name)}?</h1><p class="sub">Only rate what you ate.</p>
   ${items(cur()).map(m=>`<div class="rate">${pic(m.image_url,'140px','12px 0 0')}<h3>${esc(m.name)}</h3><div class="stars">${[1,2,3,4,5].map(n=>`<button aria-label="${n} stars" class="${(stars[m.id]||0)>=n?'f':''}" onclick="setStar('${m.id}',${n})">★</button>`).join('')}</div></div>`).join('')}
   <button class="tile go" ${Object.keys(stars).length?'':'disabled'} onclick="sendRate()">Send my ratings</button>
-  <p><button class="link" onclick="pickName('${centre}')">← That is not me</button></p>`);
+  <p><button class="link" onclick="pickBack()">← That is not me</button></p>`);
 }
 function setStar(id,n){stars[id]=n;rate();}
 async function sendRate(){

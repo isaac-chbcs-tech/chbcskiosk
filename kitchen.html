@@ -29,14 +29,17 @@ const $=id=>document.getElementById(id), out=h=>$('out').innerHTML=h;
 const S=()=>sessions.find(s=>s.id==sel);
 const dishes=()=>[...(S()?.menu_items||[])].sort((a,b)=>a.position-b.position);
 const dn=id=>dishes().find(d=>d.id==id)?.name||'';
-const sorted=()=>[...orders].sort((a,b)=>CENTRES.indexOf(a.students.centre)-CENTRES.indexOf(b.students.centre)||a.students.first_name.localeCompare(b.students.first_name));
+const sorted=()=>[...orders].sort((a,b)=>GROUPS.indexOf(a.students.centre)-GROUPS.indexOf(b.students.centre)||a.students.first_name.localeCompare(b.students.first_name));
 const counts=()=>{const c={};dishes().forEach(d=>c[d.id]=[]);sorted().forEach(o=>[o.item1,o.item2].filter(Boolean).forEach(i=>c[i]&&c[i].push(o.students)));return c;};
 const head=t=>`<h2>${t}</h2><p class="sub">${S()?esc(sheetLabel(S())):'No sheet started yet'}</p>`;
 const printBtn=`<p class="noprint"><button class="tile go" onclick="print()">🖨️ Print this page</button></p>`;
 
 const pic=(u,w,m='0 auto 10px')=>u?`<img src="${esc(u)}" alt="" loading="lazy" style="display:block;width:${w};max-width:100%;height:auto;aspect-ratio:4/3;object-fit:cover;border-radius:12px;border:3px solid #1d2a44;margin:${m}">`:'';
+const GROUPS=[...CENTRES,'Staff','Guest'];
+const grpLabel=x=>x=='Staff'?'Teachers and staff':x=='Guest'?'Visitors':'Grade '+x;
+const who=s=>s.last_initial?`${s.first_name} ${s.last_initial}.`:s.first_name;
 const sheetLabel=s=>new Date(s.created_at).toLocaleString('en-AU',{weekday:'short',day:'numeric',month:'short',hour:'numeric',minute:'2-digit'});
-const TABS={setup:['⚙️ Set up food',setup],totals:['📊 Totals',totals],cook:['🍳 Cooking list',cook],shop:['🛒 Shopping list',shop],centres:['🏫 Grade sheets',centres],feedback:['⭐ Feedback',feedback]};
+const TABS={setup:['⚙️ Set up food',setup],totals:['📊 Totals',totals],cook:['🍳 Cooking list',cook],shop:['🛒 Shopping list',shop],centres:['🏫 Group sheets',centres],people:['👥 People',people],feedback:['⭐ Feedback',feedback]};
 function tab(t){curTab=t;$('tabs').innerHTML=Object.entries(TABS).map(([k,v])=>`<button class="tab ${k==t?'on':''}" onclick="tab('${k}')">${v[0]}</button>`).join('');TABS[t][1]();}
 
 async function boot(){
@@ -123,16 +126,43 @@ async function savePw(){
   const {error}=await db.from('app_settings').update({value:v}).eq('key','order_password');
   alert(error?'The password could not be saved.':'Password saved.');
 }
+async function people(){
+  const {data}=await db.from('students').select('*').in('centre',['Staff','Guest']).order('first_name');
+  const l=data||[],row=s=>`<p class="dishrow"><b>${esc(who(s))}</b> <button class="tab" onclick="delPerson('${s.id}')">Remove</button></p>`;
+  out(`<h2>Add teachers, staff or students</h2>
+  <p class="sub">One name per line. Students need a last initial, like <i>Ava T</i>. Teachers can be like <i>Mr Smith</i>.</p>
+  <p><select id="pg" aria-label="Group">${GROUPS.filter(x=>x!='Guest').map(x=>`<option value="${x}" ${x=='Staff'?'selected':''}>${esc(grpLabel(x))}</option>`).join('')}</select></p>
+  <p><textarea id="pn" rows="6" aria-label="Names" style="font:inherit;width:100%;max-width:420px;border:3px solid var(--ink);border-radius:14px;padding:10px"></textarea></p>
+  <button class="tile go" onclick="addPeople()">Add names</button>
+  <h2>Teachers and staff</h2>${l.filter(s=>s.centre=='Staff').map(row).join('')||'<p class="sub">None added yet.</p>'}
+  <h2>Visitors who typed their own name</h2>${l.filter(s=>s.centre=='Guest').map(row).join('')||'<p class="sub">None yet.</p>'}
+  <p class="sub">Whole grades of students are added with the spreadsheet import in Supabase.</p>`);
+}
+async function addPeople(){
+  const g=$('pg').value;
+  const rows=$('pn').value.split('\n').map(x=>x.trim()).filter(Boolean).map(line=>{
+    const m=g!='Staff'&&line.match(/^(.*\S)\s+([A-Za-z])\.?$/);
+    return m?{first_name:m[1],last_initial:m[2].toUpperCase(),centre:g}:{first_name:line.slice(0,30),last_initial:'',centre:g};
+  });
+  if(!rows.length)return alert('Type at least one name.');
+  const {error}=await db.from('students').insert(rows);
+  if(error)return alert('The names could not be added.');
+  await load(true);
+}
+async function delPerson(id){
+  if(!confirm('Remove this person? Their orders and ratings will be removed too.'))return;
+  await db.from('students').delete().eq('id',id);await load(true);
+}
 function totals(){
   const c=counts();
-  out(`${head('Dish totals')}<table><tr><th>Dish</th>${CENTRES.map(x=>`<th>${x}</th>`).join('')}<th>Total</th></tr>
-  ${dishes().map(d=>`<tr><td>${esc(d.name)}</td>${CENTRES.map(x=>`<td>${c[d.id].filter(s=>s.centre==x).length}</td>`).join('')}<td class="tot">${c[d.id].length}</td></tr>`).join('')}</table>
+  out(`${head('Dish totals')}<table><tr><th>Dish</th>${GROUPS.map(x=>`<th>${x=='Guest'?'Visitors':x}</th>`).join('')}<th>Total</th></tr>
+  ${dishes().map(d=>`<tr><td>${esc(d.name)}</td>${GROUPS.map(x=>`<td>${c[d.id].filter(s=>s.centre==x).length}</td>`).join('')}<td class="tot">${c[d.id].length}</td></tr>`).join('')}</table>
   <p>${orders.length} students ordered.</p>${printBtn}`);
 }
 function cook(){
   const c=counts();
   out(dishes().map(d=>`<section class="sheet">${head(`${esc(d.name)}: ${c[d.id].length} portions`)}<p>Tick each one when it is cooked.</p>
-  <div class="names">${c[d.id].map(s=>`<label class="chk"><input type="checkbox"><span>${esc(nm(s))} <small>${s.centre}</small></span></label>`).join('')||'<p>No orders.</p>'}</div></section>`).join('')+printBtn);
+  <div class="names">${c[d.id].map(s=>`<label class="chk"><input type="checkbox"><span>${esc(who(s))} <small>${s.centre=='Guest'?'Visitor':s.centre}</small></span></label>`).join('')||'<p>No orders.</p>'}</div></section>`).join('')+printBtn);
 }
 function shop(){
   const c=counts();
@@ -140,9 +170,9 @@ function shop(){
   ${dishes().map(d=>`<tr><td>${esc(d.name)}</td><td class="tot">${c[d.id].length}</td><td class="blank"></td><td>☐</td></tr>`).join('')}</table></section>${printBtn}`);
 }
 function centres(){
-  out(CENTRES.map(x=>{const l=sorted().filter(o=>o.students.centre==x);
-    return `<section class="sheet">${head(`Grade ${x}`)}<table><tr><th>Name</th><th>Order</th><th>Collected</th></tr>
-    ${l.map(o=>`<tr><td>${esc(nm(o.students))}</td><td>${[o.item1,o.item2].filter(Boolean).map(i=>esc(dn(i))).join(' + ')}</td><td>☐</td></tr>`).join('')||'<tr><td colspan="3">No orders.</td></tr>'}</table></section>`;}).join('')+printBtn);
+  out(GROUPS.filter(x=>CENTRES.includes(x)||sorted().some(o=>o.students.centre==x)).map(x=>{const l=sorted().filter(o=>o.students.centre==x);
+    return `<section class="sheet">${head(grpLabel(x))}<table><tr><th>Name</th><th>Order</th><th>Collected</th></tr>
+    ${l.map(o=>`<tr><td>${esc(who(o.students))}</td><td>${[o.item1,o.item2].filter(Boolean).map(i=>esc(dn(i))).join(' + ')}</td><td>☐</td></tr>`).join('')||'<tr><td colspan="3">No orders.</td></tr>'}</table></section>`;}).join('')+printBtn);
 }
 async function feedback(){
   const {data}=await db.from('feedback').select('*').eq('session_id',sel);const f=data||[];
