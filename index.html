@@ -8,7 +8,7 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
 <script src="config.js"></script>
 <script>
-let students=[],sessions=[],mode,centre,student,picked=[],stars={};
+let students=[],sessions=[],mode,centre,student,picked=[],stars={},token=null;
 const app=document.getElementById('app');
 const show=h=>{app.innerHTML=h;scrollTo(0,0)};
 const again=`<p><button class="link" onclick="home()">← Start again</button></p>`;
@@ -18,9 +18,34 @@ const items=s=>[...s.menu_items].sort((a,b)=>a.position-b.position);
 const pic=(u,w,m='0 auto 10px')=>u?`<img src="${esc(u)}" alt="" loading="lazy" style="display:block;width:${w};max-width:100%;height:auto;aspect-ratio:4/3;object-fit:cover;border-radius:12px;border:3px solid #1d2a44;margin:${m}">`:'';
 
 async function init(){
-  const [a,b]=await Promise.all([db.from('students').select('*').order('first_name'),db.from('sessions').select('*, menu_items(*)').order('created_at',{ascending:false})]);
-  if(a.error||b.error)return show(`<h1>Oops</h1><p>The food page could not load. Tell a teacher.</p>`);
-  students=a.data;sessions=b.data;home();
+  const b=await db.from('sessions').select('*, menu_items(*)').order('created_at',{ascending:false});
+  if(b.error)return show(`<h1>Oops</h1><p>The food page could not load. Tell a teacher.</p>`);
+  sessions=b.data;
+  try{token=localStorage.getItem('foodToken');}catch(e){}
+  if(token&&await loadRoster())return home();
+  lock();
+}
+function lock(note=''){
+  show(`<h1>🔒 Food orders</h1><p>Ask your teacher for the password.</p>
+  <p><input type="password" id="pw" aria-label="Password" autocomplete="off" onkeydown="if(event.key==='Enter')unlock()" style="font-size:1.4rem;width:100%;max-width:420px"></p>
+  ${note?`<p>${esc(note)}</p>`:''}<button class="tile go" onclick="unlock()">Unlock</button>`);
+}
+async function unlock(){
+  const {data,error}=await db.rpc('unlock',{pw:document.getElementById('pw').value});
+  if(error||!data)return lock('That password is not right. Try again.');
+  token=data;try{localStorage.setItem('foodToken',token);}catch(e){}
+  if(await loadRoster())home();else lock('Something went wrong. Try again.');
+}
+async function loadRoster(){
+  const ok=await db.rpc('check_token',{t:token});
+  if(ok.data!==true)return false;
+  const r=await db.rpc('get_roster',{t:token});
+  if(r.error)return false;
+  students=r.data||[];return true;
+}
+function expire(){
+  try{localStorage.removeItem('foodToken');}catch(e){}
+  token=null;students=[];lock('The password has expired. Please enter it again.');
 }
 function home(){
   mode=centre=student=null;picked=[];stars={};
@@ -52,7 +77,8 @@ function dishes(){
 }
 function toggle(id){const i=picked.indexOf(id);if(i>-1)picked.splice(i,1);else if(picked.length<2)picked.push(id);dishes();}
 async function send(){
-  const {error}=await db.from('orders').insert({session_id:cur().id,student_id:student.id,item1:picked[0],item2:picked[1]||null});
+  const {error}=await db.rpc('place_order',{t:token,p_session:cur().id,p_student:student.id,p_item1:picked[0],p_item2:picked[1]||null});
+  if(error&&error.code=='28000')return expire();
   if(error)return show(error.code=='23505'?msg('You have already ordered','Ask the kitchen team if you need to change your order.'):msg('Order not sent','Ordering may have just closed. Tell a teacher.'));
   show(`<h1>🎉 Order sent!</h1><p>Enjoy your food, ${esc(student.first_name)}.</p><button class="tile go" onclick="home()">Done</button>`);
 }
@@ -65,8 +91,9 @@ function rate(){
 }
 function setStar(id,n){stars[id]=n;rate();}
 async function sendRate(){
-  const rows=Object.entries(stars).map(([id,n])=>({session_id:cur().id,student_id:student.id,menu_item_id:id,stars:n}));
-  const {error}=await db.from('feedback').insert(rows);
+  const rows=Object.entries(stars).map(([id,n])=>({menu_item_id:id,stars:n}));
+  const {error}=await db.rpc('submit_ratings',{t:token,p_session:cur().id,p_student:student.id,p_ratings:rows});
+  if(error&&error.code=='28000')return expire();
   if(error)return show(error.code=='23505'?msg('You have already rated this food','Thanks for your ratings!'):msg('Ratings not sent','Tell a teacher.'));
   show(`<h1>⭐ Thank you!</h1><p>Your ratings help the kitchen team.</p><button class="tile go" onclick="home()">Done</button>`);
 }

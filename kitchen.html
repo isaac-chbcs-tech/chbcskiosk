@@ -72,8 +72,8 @@ function setup(){
   <p class="sub">This closes the current food menu and opens orders for the new one. Old orders are kept.</p>
   <p><label>Cooking day<br><input type="date" id="d"></label></p>
   ${[1,2,3,4].map(i=>`<p class="dishrow"><input type="text" class="dn" placeholder="Dish ${i}" aria-label="Dish ${i}" maxlength="40"><input type="file" class="df" accept="image/*" aria-label="Photo for dish ${i} (optional)"></p>`).join('')}
-  <button class="tile go" onclick="newLunch()">Start new food menu</button>`);
-  $('d').valueAsDate=new Date();
+  <button class="tile go" onclick="newLunch()">Start new food menu</button><div id="pwbox"></div>`);
+  $('d').valueAsDate=new Date();loadPw();
 }
 async function setStatus(st){await db.from('sessions').update({status:st}).eq('id',sel);load(true);}
 async function shrink(file){
@@ -112,6 +112,20 @@ async function newLunch(){
   load(true);
 }
 
+async function loadPw(){
+  const {data}=await db.from('app_settings').select('value').eq('key','order_password').maybeSingle();
+  if(!$('pwbox'))return;
+  $('pwbox').innerHTML=`<h2>Food password</h2>
+  <p class="sub">Students type this once a day on their device. Changing it locks every device until the new password is entered.</p>
+  <p><input type="text" id="np" value="${esc(data?.value||'')}" maxlength="40" aria-label="Food password"></p>
+  <button class="tile" onclick="savePw()">Save password</button>`;
+}
+async function savePw(){
+  const v=$('np').value.trim();
+  if(v.length<4)return alert('Use at least 4 characters.');
+  const {error}=await db.from('app_settings').update({value:v}).eq('key','order_password');
+  alert(error?'The password could not be saved.':'Password saved.');
+}
 function totals(){
   const c=counts();
   out(`${head('Dish totals')}<table><tr><th>Dish</th>${CENTRES.map(x=>`<th>${x}</th>`).join('')}<th>Total</th></tr>
