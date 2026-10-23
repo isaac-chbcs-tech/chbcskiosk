@@ -13,7 +13,7 @@ const app=document.getElementById('app');
 const show=h=>{app.innerHTML=h;scrollTo(0,0)};
 const again=`<p><button class="link" onclick="home()">← Start again</button></p>`;
 const msg=(t,p)=>`<h1>${t}</h1><p>${p}</p>${again}`;
-const cur=()=>sessions.find(s=>s.status==(mode=='order'?'open':'cooked'));
+const cur=()=>sessions.find(s=>mode=='order'?s.status=='open':s.status!='cooked');
 const items=s=>[...s.menu_items].sort((a,b)=>a.position-b.position);
 const pic=(u,w,m='0 auto 10px')=>u?`<img src="${esc(u)}" alt="" loading="lazy" style="display:block;width:${w};max-width:100%;height:auto;aspect-ratio:4/3;object-fit:cover;border-radius:12px;border:3px solid #1d2a44;margin:${m}">`:'';
 
@@ -49,14 +49,13 @@ function expire(){
 }
 function home(){
   mode=centre=student=null;picked=[];stars={};
-  const o=sessions.find(s=>s.status=='open');
-  show(`<h1>🍴 Food time!</h1>${o?`<p class="sub">Cooking on ${esc(dayLabel(o.cook_date))}</p>`:''}
+  show(`<h1>🍴 Food time!</h1>
   <div class="grid two"><button class="tile big a" onclick="start('order')">🍽️<br>Order food</button>
   <button class="tile big b" onclick="start('rate')">⭐<br>Rate my food</button></div>`);
 }
 function start(m){
   mode=m;
-  if(!cur())return show(msg(m=='order'?'Ordering is closed':'Nothing to rate yet',m=='order'?'Ask the kitchen team when ordering opens again.':'Come back after the food has been cooked.'));
+  if(!cur())return show(msg(m=='order'?'Ordering is closed':'Ratings are not open',m=='order'?'Ask the kitchen team when ordering opens again.':'Ask the kitchen team when the next food is ready.'));
   pickCentre();
 }
 function pickCentre(){
