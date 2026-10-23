@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="en-AU"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Kitchen team</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@700;800&family=Nunito:wght@600;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css"></head>
+<body><main>
+<div id="login" hidden>
+  <h1>👩‍🍳 Kitchen team</h1>
+  <form onsubmit="login(event)" class="panel">
+    <p><label>Email<br><input type="email" id="em" required></label></p>
+    <p><label>Password<br><input type="password" id="pw" required></label></p>
+    <button class="tile go" type="submit">Log in</button><p id="err"></p>
+  </form>
+</div>
+<div id="app" hidden>
+  <div class="bar noprint"><h1>👩‍🍳 Kitchen team</h1>
+    <div class="row"><select id="sess" aria-label="Choose lunch" onchange="pick(this.value)"></select>
+    <button class="tab" onclick="logout()">Log out</button></div></div>
+  <div class="tabs noprint" id="tabs"></div>
+  <div class="panel" id="out"></div>
+</div>
+</main>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script src="config.js"></script>
+<script>
+let students=[],sessions=[],orders=[],sel,curTab='setup';
+const $=id=>document.getElementById(id), out=h=>$('out').innerHTML=h;
+const S=()=>sessions.find(s=>s.id==sel);
+const dishes=()=>[...(S()?.menu_items||[])].sort((a,b)=>a.position-b.position);
+const dn=id=>dishes().find(d=>d.id==id)?.name||'';
+const sorted=()=>[...orders].sort((a,b)=>CENTRES.indexOf(a.students.centre)-CENTRES.indexOf(b.students.centre)||a.students.first_name.localeCompare(b.students.first_name));
+const counts=()=>{const c={};dishes().forEach(d=>c[d.id]=[]);sorted().forEach(o=>[o.item1,o.item2].filter(Boolean).forEach(i=>c[i]&&c[i].push(o.students)));return c;};
+const head=t=>`<h2>${t}</h2><p class="sub">${S()?esc(dayLabel(S().cook_date)):'No lunch set up yet'}</p>`;
+const printBtn=`<p class="noprint"><button class="tile go" onclick="print()">🖨️ Print this page</button></p>`;
+
+const TABS={setup:['⚙️ Set up lunch',setup],totals:['📊 Totals',totals],cook:['🍳 Cooking list',cook],shop:['🛒 Shopping list',shop],centres:['🏫 Centre sheets',centres],feedback:['⭐ Feedback',feedback]};
+function tab(t){curTab=t;$('tabs').innerHTML=Object.entries(TABS).map(([k,v])=>`<button class="tab ${k==t?'on':''}" onclick="tab('${k}')">${v[0]}</button>`).join('');TABS[t][1]();}
+
+async function boot(){
+  const {data}=await db.auth.getSession();
+  $('login').hidden=!!data.session;$('app').hidden=!data.session;
+  if(data.session)load();
+}
+async function login(e){e.preventDefault();
+  const {error}=await db.auth.signInWithPassword({email:$('em').value,password:$('pw').value});
+  if(error)$('err').textContent='That email or password is not right.';else boot();
+}
+async function logout(){await db.auth.signOut();boot();}
+async function load(keep){
+  const [a,b]=await Promise.all([db.from('students').select('*'),db.from('sessions').select('*, menu_items(*)').order('created_at',{ascending:false})]);
+  students=a.data||[];sessions=b.data||[];
+  if(!keep||!S())sel=sessions[0]?.id;
+  $('sess').innerHTML=sessions.map(s=>`<option value="${s.id}" ${s.id==sel?'selected':''}>${esc(dayLabel(s.cook_date))} (${s.status})</option>`).join('');
+  await loadOrders();tab(curTab);
+}
+async function loadOrders(){
+  if(!sel){orders=[];return;}
+  const {data}=await db.from('orders').select('*, students(*)').eq('session_id',sel);orders=data||[];
+}
+async function pick(id){sel=id;await loadOrders();tab(curTab);}
+
+function setup(){
+  const s=S(),lbl={open:'Taking orders',closed:'Orders closed',cooked:'Cooked'};
+  out(`<h2>This lunch</h2>${s?`<p><b>${esc(dayLabel(s.cook_date))}</b> <span class="pill ${s.status}">${lbl[s.status]}</span> ${orders.length} orders so far</p>
+  <div class="row">${s.status=='open'?`<button class="tile" onclick="setStatus('closed')">Close orders</button>`:''}
+  ${s.status=='closed'?`<button class="tile" onclick="setStatus('open')">Reopen orders</button><button class="tile" onclick="setStatus('cooked')">Mark as cooked</button>`:''}</div>
+  <p class="sub">Students can rate the food once it is marked as cooked.</p>`:'<p>No lunch yet. Start one below.</p>'}
+  <h2>Start the next lunch</h2>
+  <p class="sub">This closes the current lunch and opens orders for the new one. Old orders are kept.</p>
+  <p><label>Cooking day<br><input type="date" id="d"></label></p>
+  ${[1,2,3,4].map(i=>`<p><input type="text" class="dn" placeholder="Dish ${i}" aria-label="Dish ${i}" maxlength="40"></p>`).join('')}
+  <button class="tile go" onclick="newLunch()">Start new lunch</button>`);
+  $('d').valueAsDate=new Date();
+}
+async function setStatus(st){await db.from('sessions').update({status:st}).eq('id',sel);load(true);}
+async function newLunch(){
+  const date=$('d').value,names=[...document.querySelectorAll('.dn')].map(i=>i.value.trim()).filter(Boolean);
+  if(!date||!names.length)return alert('Pick a day and type at least one dish.');
+  if(!confirm('Start a new lunch? Orders for the current lunch will close.'))return;
+  await db.from('sessions').update({status:'closed'}).eq('status','open');
+  const {data,error}=await db.from('sessions').insert({cook_date:date}).select().single();
+  if(error)return alert('Could not start the lunch. Tell a teacher.');
+  await db.from('menu_items').insert(names.map((name,i)=>({session_id:data.id,name,position:i})));
+  sel=data.id;load(true);
+}
+
+function totals(){
+  const c=counts();
+  out(`${head('Dish totals')}<table><tr><th>Dish</th>${CENTRES.map(x=>`<th>${x}</th>`).join('')}<th>Total</th></tr>
+  ${dishes().map(d=>`<tr><td>${esc(d.name)}</td>${CENTRES.map(x=>`<td>${c[d.id].filter(s=>s.centre==x).length}</td>`).join('')}<td class="tot">${c[d.id].length}</td></tr>`).join('')}</table>
+  <p>${orders.length} students ordered.</p>${printBtn}`);
+}
+function cook(){
+  const c=counts();
+  out(dishes().map(d=>`<section class="sheet">${head(`${esc(d.name)}: ${c[d.id].length} portions`)}<p>Tick each one when it is cooked.</p>
+  <div class="names">${c[d.id].map(s=>`<label class="chk"><input type="checkbox"><span>${esc(nm(s))} <small>${s.centre}</small></span></label>`).join('')||'<p>No orders.</p>'}</div></section>`).join('')+printBtn);
+}
+function shop(){
+  const c=counts();
+  out(`<section class="sheet">${head('Shopping list')}<table><tr><th>Dish</th><th>Portions</th><th>What to buy</th><th>Bought</th></tr>
+  ${dishes().map(d=>`<tr><td>${esc(d.name)}</td><td class="tot">${c[d.id].length}</td><td class="blank"></td><td>☐</td></tr>`).join('')}</table></section>${printBtn}`);
+}
+function centres(){
+  out(CENTRES.map(x=>{const l=sorted().filter(o=>o.students.centre==x);
+    return `<section class="sheet">${head(`Learning centre ${x}`)}<table><tr><th>Name</th><th>Order</th><th>Collected</th></tr>
+    ${l.map(o=>`<tr><td>${esc(nm(o.students))}</td><td>${[o.item1,o.item2].filter(Boolean).map(i=>esc(dn(i))).join(' + ')}</td><td>☐</td></tr>`).join('')||'<tr><td colspan="3">No orders.</td></tr>'}</table></section>`;}).join('')+printBtn);
+}
+async function feedback(){
+  const {data}=await db.from('feedback').select('*').eq('session_id',sel);const f=data||[];
+  out(`${head('Feedback')}<table><tr><th>Dish</th><th>Average rating</th><th>Ratings</th></tr>
+  ${dishes().map(d=>{const r=f.filter(x=>x.menu_item_id==d.id),a=r.length?r.reduce((t,x)=>t+x.stars,0)/r.length:0,k=Math.round(a);
+  return `<tr><td>${esc(d.name)}</td><td>${r.length?'★'.repeat(k)+'☆'.repeat(5-k)+' '+a.toFixed(1):'No ratings yet'}</td><td>${r.length}</td></tr>`;}).join('')}</table>${printBtn}`);
+}
+boot();
+</script></body></html>
