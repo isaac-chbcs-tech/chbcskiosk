@@ -44,7 +44,7 @@ function chooseStudent(id){student=students.find(s=>s.id==id);picked=[];stars={}
 
 function dishes(){
   show(`<h1>Hi ${esc(student.first_name)}! Pick 1 or 2</h1>
-  <div class="grid">${items(cur()).map((m,i)=>`<button class="tile dish d${i%4} ${picked.includes(m.id)?'on':''}" onclick="toggle('${m.id}')">${esc(m.name)}</button>`).join('')}</div>
+  <div class="grid">${items(cur()).map((m,i)=>`<button class="tile dish d${i%4} ${picked.includes(m.id)?'on':''}" onclick="toggle('${m.id}')">${m.image_url?`<img src="${esc(m.image_url)}" alt="" loading="lazy">`:''}${esc(m.name)}</button>`).join('')}</div>
   <p class="sub">${picked.length} of 2 picked</p>
   <button class="tile go" ${picked.length?'':'disabled'} onclick="send()">Send my order</button>
   <p><button class="link" onclick="pickName('${centre}')">← That is not me</button></p>`);
@@ -58,7 +58,7 @@ async function send(){
 
 function rate(){
   show(`<h1>How was the food, ${esc(student.first_name)}?</h1><p class="sub">Only rate what you ate.</p>
-  ${items(cur()).map(m=>`<div class="rate"><h3>${esc(m.name)}</h3><div class="stars">${[1,2,3,4,5].map(n=>`<button aria-label="${n} stars" class="${(stars[m.id]||0)>=n?'f':''}" onclick="setStar('${m.id}',${n})">★</button>`).join('')}</div></div>`).join('')}
+  ${items(cur()).map(m=>`<div class="rate">${m.image_url?`<img src="${esc(m.image_url)}" alt="" loading="lazy">`:''}<h3>${esc(m.name)}</h3><div class="stars">${[1,2,3,4,5].map(n=>`<button aria-label="${n} stars" class="${(stars[m.id]||0)>=n?'f':''}" onclick="setStar('${m.id}',${n})">★</button>`).join('')}</div></div>`).join('')}
   <button class="tile go" ${Object.keys(stars).length?'':'disabled'} onclick="sendRate()">Send my ratings</button>
   <p><button class="link" onclick="pickName('${centre}')">← That is not me</button></p>`);
 }

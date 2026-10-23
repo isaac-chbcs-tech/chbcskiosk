@@ -65,24 +65,50 @@ function setup(){
   out(`<h2>This lunch</h2>${s?`<p><b>${esc(dayLabel(s.cook_date))}</b> <span class="pill ${s.status}">${lbl[s.status]}</span> ${orders.length} orders so far</p>
   <div class="row">${s.status=='open'?`<button class="tile" onclick="setStatus('closed')">Close orders</button>`:''}
   ${s.status=='closed'?`<button class="tile" onclick="setStatus('open')">Reopen orders</button><button class="tile" onclick="setStatus('cooked')">Mark as cooked</button>`:''}</div>
-  <p class="sub">Students can rate the food once it is marked as cooked.</p>`:'<p>No lunch yet. Start one below.</p>'}
+  <p class="sub">Students can rate the food once it is marked as cooked.</p>
+  <h3>Dish photos</h3>${dishes().map(d=>`<p class="dishrow">${d.image_url?`<img class="thumb" src="${esc(d.image_url)}" alt="">`:''}<b>${esc(d.name)}</b> <input type="file" accept="image/*" onchange="setPhoto('${d.id}',this.files[0])" aria-label="Photo for ${esc(d.name)}"></p>`).join('')}`:'<p>No lunch yet. Start one below.</p>'}
   <h2>Start the next lunch</h2>
   <p class="sub">This closes the current lunch and opens orders for the new one. Old orders are kept.</p>
   <p><label>Cooking day<br><input type="date" id="d"></label></p>
-  ${[1,2,3,4].map(i=>`<p><input type="text" class="dn" placeholder="Dish ${i}" aria-label="Dish ${i}" maxlength="40"></p>`).join('')}
+  ${[1,2,3,4].map(i=>`<p class="dishrow"><input type="text" class="dn" placeholder="Dish ${i}" aria-label="Dish ${i}" maxlength="40"><input type="file" class="df" accept="image/*" aria-label="Photo for dish ${i} (optional)"></p>`).join('')}
   <button class="tile go" onclick="newLunch()">Start new lunch</button>`);
   $('d').valueAsDate=new Date();
 }
 async function setStatus(st){await db.from('sessions').update({status:st}).eq('id',sel);load(true);}
+async function shrink(file){
+  const img=await createImageBitmap(file),k=Math.min(1,900/Math.max(img.width,img.height));
+  const c=document.createElement('canvas');c.width=Math.round(img.width*k);c.height=Math.round(img.height*k);
+  c.getContext('2d').drawImage(img,0,0,c.width,c.height);
+  return new Promise(r=>c.toBlob(r,'image/jpeg',.82));
+}
+async function upload(file,name){
+  try{
+    const path=`${sel}/${name}-${Date.now()}.jpg`;
+    const {error}=await db.storage.from('dish-photos').upload(path,await shrink(file),{contentType:'image/jpeg'});
+    return error?null:db.storage.from('dish-photos').getPublicUrl(path).data.publicUrl;
+  }catch(e){return null;}
+}
+async function setPhoto(id,file){
+  if(!file)return;
+  const url=await upload(file,id);
+  if(!url)return alert('The photo could not be saved. Try a different picture.');
+  await db.from('menu_items').update({image_url:url}).eq('id',id);load(true);
+}
 async function newLunch(){
-  const date=$('d').value,names=[...document.querySelectorAll('.dn')].map(i=>i.value.trim()).filter(Boolean);
-  if(!date||!names.length)return alert('Pick a day and type at least one dish.');
+  const date=$('d').value,rows=[...document.querySelectorAll('.dishrow')].map(r=>({name:r.querySelector('.dn').value.trim(),file:r.querySelector('.df').files[0]})).filter(r=>r.name);
+  if(!date||!rows.length)return alert('Pick a day and type at least one dish.');
   if(!confirm('Start a new lunch? Orders for the current lunch will close.'))return;
   await db.from('sessions').update({status:'closed'}).eq('status','open');
   const {data,error}=await db.from('sessions').insert({cook_date:date}).select().single();
   if(error)return alert('Could not start the lunch. Tell a teacher.');
-  await db.from('menu_items').insert(names.map((name,i)=>({session_id:data.id,name,position:i})));
-  sel=data.id;load(true);
+  sel=data.id;let failed=0;const items=[];
+  for(let i=0;i<rows.length;i++){
+    let url=null;if(rows[i].file){url=await upload(rows[i].file,'new'+i);if(!url)failed++;}
+    items.push({session_id:data.id,name:rows[i].name,position:i,image_url:url});
+  }
+  await db.from('menu_items').insert(items);
+  if(failed)alert('The lunch has started, but '+failed+' photo(s) could not be saved. You can add them again under Dish photos.');
+  load(true);
 }
 
 function totals(){
