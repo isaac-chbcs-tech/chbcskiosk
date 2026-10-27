@@ -106,10 +106,15 @@ async function send(){
   show(`<h1>🎉 Order sent!</h1><p>Enjoy your food, ${esc(student.first_name)}.</p><button class="tile go" onclick="home()">Done</button>`);
 }
 
-function rate(){
+async function rate(){
+  const r=await db.rpc('get_my_order',{t:token,p_session:cur().id,p_student:student.id});
+  if(r.error&&r.error.code=='28000')return expire();
+  const mine=(r.data||[]).map(x=>typeof x=='object'?Object.values(x)[0]:x);
+  const shown=items(cur()).filter(m=>mine.includes(m.id));
+  if(r.error||!shown.length)return show(msg(r.error?'Something went wrong':'Nothing to rate',r.error?'Tell a teacher.':'You did not order any food on this sheet, so there is nothing for you to rate. If you did order, check you tapped your own name.'));
   const kinds=[['p','Presentation (how it looked)'],['t','Taste']];
-  show(`<h1>How was the food, ${esc(student.first_name)}?</h1><p class="sub">Give each dish you ate two scores out of 10. 1 is lowest and 10 is best.</p>
-  ${items(cur()).map(m=>{const v=stars[m.id]||{};return `<div class="rate">${pic(m.image_url,'140px','12px 0 0')}<h3>${esc(m.name)} <span id="ok${m.id}">${v.p&&v.t?'✓':''}</span></h3>
+  show(`<h1>How was the food, ${esc(student.first_name)}?</h1><p class="sub">Rate the food you ordered. Give each dish two scores out of 10. 1 is lowest and 10 is best.</p>
+  ${shown.map(m=>{const v=stars[m.id]||{};return `<div class="rate">${pic(m.image_url,'140px','12px 0 0')}<h3>${esc(m.name)} <span id="ok${m.id}">${v.p&&v.t?'✓':''}</span></h3>
   ${kinds.map(([k,label])=>`<p class="sub" style="margin:8px 0 6px">${label}</p><div class="score" data-r="${m.id}${k}">${[1,2,3,4,5,6,7,8,9,10].map(n=>`<button data-n="${n}" aria-label="${label} ${n} out of 10" class="${v[k]===n?'on':''}" onclick="setScore('${m.id}','${k}',${n})">${n}</button>`).join('')}</div>`).join('')}</div>`;}).join('')}
   <button class="tile go" id="sendbtn" ${Object.values(stars).some(v=>v.p&&v.t)?'':'disabled'} onclick="sendRate()">Send my ratings</button>
   <p class="sub">A dish only counts when it has both scores.</p>
