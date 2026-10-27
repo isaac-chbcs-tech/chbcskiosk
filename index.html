@@ -3,7 +3,12 @@
 <title>Food orders</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@700;800&family=Nunito:wght@600;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css"></head>
+<link rel="stylesheet" href="style.css"><style>
+.score{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin-bottom:10px}
+.score button{font:inherit;font-weight:800;font-size:1.3rem;min-height:54px;border:3px solid var(--ink);border-radius:14px;background:#fff;color:var(--ink);cursor:pointer}
+.score button.on{background:var(--sun);box-shadow:0 3px 0 var(--ink)}
+.score button:focus-visible{outline:4px solid var(--blue);outline-offset:2px}
+</style></head>
 <body><main id="app"><p>Loading…</p></main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
 <script src="config.js"></script>
@@ -102,14 +107,22 @@ async function send(){
 }
 
 function rate(){
-  show(`<h1>How was the food, ${esc(student.first_name)}?</h1><p class="sub">Only rate what you ate.</p>
-  ${items(cur()).map(m=>`<div class="rate">${pic(m.image_url,'140px','12px 0 0')}<h3>${esc(m.name)}</h3><div class="stars">${[1,2,3,4,5].map(n=>`<button aria-label="${n} stars" class="${(stars[m.id]||0)>=n?'f':''}" onclick="setStar('${m.id}',${n})">★</button>`).join('')}</div></div>`).join('')}
-  <button class="tile go" ${Object.keys(stars).length?'':'disabled'} onclick="sendRate()">Send my ratings</button>
+  const kinds=[['p','Presentation (how it looked)'],['t','Taste']];
+  show(`<h1>How was the food, ${esc(student.first_name)}?</h1><p class="sub">Give each dish you ate two scores out of 10. 1 is lowest and 10 is best.</p>
+  ${items(cur()).map(m=>{const v=stars[m.id]||{};return `<div class="rate">${pic(m.image_url,'140px','12px 0 0')}<h3>${esc(m.name)} <span id="ok${m.id}">${v.p&&v.t?'✓':''}</span></h3>
+  ${kinds.map(([k,label])=>`<p class="sub" style="margin:8px 0 6px">${label}</p><div class="score" data-r="${m.id}${k}">${[1,2,3,4,5,6,7,8,9,10].map(n=>`<button data-n="${n}" aria-label="${label} ${n} out of 10" class="${v[k]===n?'on':''}" onclick="setScore('${m.id}','${k}',${n})">${n}</button>`).join('')}</div>`).join('')}</div>`;}).join('')}
+  <button class="tile go" id="sendbtn" ${Object.values(stars).some(v=>v.p&&v.t)?'':'disabled'} onclick="sendRate()">Send my ratings</button>
+  <p class="sub">A dish only counts when it has both scores.</p>
   <p><button class="link" onclick="pickBack()">← That is not me</button></p>`);
 }
-function setStar(id,n){stars[id]=n;rate();}
+function setScore(id,k,n){
+  const v=(stars[id]=stars[id]||{});v[k]=n;
+  document.querySelectorAll(`[data-r="${id}${k}"] button`).forEach(b=>b.classList.toggle('on',+b.dataset.n===n));
+  document.getElementById('ok'+id).textContent=v.p&&v.t?'✓':'';
+  document.getElementById('sendbtn').disabled=!Object.values(stars).some(x=>x.p&&x.t);
+}
 async function sendRate(){
-  const rows=Object.entries(stars).map(([id,n])=>({menu_item_id:id,stars:n}));
+  const rows=Object.entries(stars).filter(([id,v])=>v.p&&v.t).map(([id,v])=>({menu_item_id:id,presentation:v.p,taste:v.t}));
   const {error}=await db.rpc('submit_ratings',{t:token,p_session:cur().id,p_student:student.id,p_ratings:rows});
   if(error&&error.code=='28000')return expire();
   if(error)return show(error.code=='23505'?msg('You have already rated this food','Thanks for your ratings!'):msg('Ratings not sent','Tell a teacher.'));

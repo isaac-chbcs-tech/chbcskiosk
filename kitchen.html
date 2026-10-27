@@ -175,10 +175,10 @@ function centres(){
     ${l.map(o=>`<tr><td>${esc(who(o.students))}</td><td>${[o.item1,o.item2].filter(Boolean).map(i=>esc(dn(i))).join(' + ')}</td><td>☐</td></tr>`).join('')||'<tr><td colspan="3">No orders.</td></tr>'}</table></section>`;}).join('')+printBtn);
 }
 async function feedback(){
-  const {data}=await db.from('feedback').select('*').eq('session_id',sel);const f=data||[];
-  out(`${head('Feedback')}<table><tr><th>Dish</th><th>Average rating</th><th>Ratings</th></tr>
-  ${dishes().map(d=>{const r=f.filter(x=>x.menu_item_id==d.id),a=r.length?r.reduce((t,x)=>t+x.stars,0)/r.length:0,k=Math.round(a);
-  return `<tr><td>${esc(d.name)}</td><td>${r.length?'★'.repeat(k)+'☆'.repeat(5-k)+' '+a.toFixed(1):'No ratings yet'}</td><td>${r.length}</td></tr>`;}).join('')}</table>${printBtn}`);
+  const {data}=await db.from('feedback').select('*').eq('session_id',sel);
+  const f=(data||[]).filter(x=>x.presentation&&x.taste),avg=(r,k)=>(r.reduce((t,x)=>t+x[k],0)/r.length).toFixed(1);
+  out(`${head('Feedback')}<table><tr><th>Dish</th><th>Presentation (out of 10)</th><th>Taste (out of 10)</th><th>Ratings</th></tr>
+  ${dishes().map(d=>{const r=f.filter(x=>x.menu_item_id==d.id);return `<tr><td>${esc(d.name)}</td><td class="tot">${r.length?avg(r,'presentation'):'-'}</td><td class="tot">${r.length?avg(r,'taste'):'-'}</td><td>${r.length}</td></tr>`;}).join('')}</table>${printBtn}`);
 }
 boot();
 </script></body></html>
